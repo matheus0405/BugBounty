@@ -1,0 +1,47 @@
+import subprocess
+import sys
+import concurrent.futures
+
+domain = str(sys.argv[1])
+
+tools = {
+    'subfinder': 'subfinder -silent -d ' + domain +' -o subfinder.txt >> /dev/null',
+    'findomain': 'findomain -t ' + domain +' -u findomain.txt >> /dev/null',
+    'assetfinder': 'assetfinder -subs-only '+ domain +' | sed \'s/\\*.//g\' | anew assetfinder.txt >> /dev/null',
+    'chaos': 'chaos -silent -d '+ domain +' -o chaos.txt >> /dev/null',
+    'sublister': 'python3 /root/Tools/Sublist3r/sublist3r.py -d '+ domain +' -o sublister.txt >> /dev/null',
+    'wayback': 'echo '+ domain +' | waybackurls | unfurl -u domains | anew wayback.txt >> /dev/null',
+    'github-subdomains': 'github-subdomains -t API_KEY -d '+ domain +' grep -v \">>>\" | anew githubsub.txt >> /dev/null',
+}
+
+# Function to execute the subdomain enumeration command
+def execute_command(tool, command):
+    try:
+        subprocess.run(command, shell=True, check=True)
+        print(f'{tool} completed successfully.')
+    except subprocess.CalledProcessError as e:
+        print(f'Error executing {tool}: {e}')
+executor = concurrent.futures.ThreadPoolExecutor()
+
+for tool, command in tools.items():
+    executor.submit(execute_command, tool, command)
+
+executor.shutdown()
+
+clean_up_cmd="cat *.txt | unfurl -u domains | sort -u | anew subdomains.txt"
+subprocess.run(clean_up_cmd, shell=True, check=True)
+
+notify_cmd="echo \"Subdomain discovery on target completed.\" | notify -silent"
+subprocess.run(notify_cmd, shell=True, check=True)
+
+naabu_cmd = "naabu -l subdomains.txt -silent -json > ports.json"
+subprocess.run(naabu_cmd, shell=True, check=True)
+
+extract_cmd = "jq -r \'.host + \":\" + (.port | .Port | tostring)\' ports.json > naabu_output.txt"
+subprocess.run(extract_cmd, shell=True, check=True)
+
+nmap_cmd = "nmap -iL subdomains.txt -p 1-65535 -sV -oN scan.txt"
+subprocess.run(nmap_cmd, shell=True, check=True)
+
+notify_cmd = f"echo \"Subdomain discovery and port scanning on target completed on target {domain}.\" | notify -silent"
+subprocess.run(notify_cmd, shell=True, check=True)
